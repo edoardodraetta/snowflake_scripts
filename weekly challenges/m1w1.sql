@@ -1,0 +1,246 @@
+USE ROLE accountadmin;
+USE WAREHOUSE compute_wh;
+
+--- EXERCISE 1: DATABASE_1
+
+CREATE OR REPLACE DATABASE database_1;
+
+CREATE OR REPLACE SCHEMA prd;
+CREATE OR REPLACE SCHEMA dev;
+CREATE OR REPLACE SCHEMA sec;
+
+-- EXERCISE 2: USERS
+
+-- CREATE ROLES
+
+CREATE ROLE IF NOT EXISTS network_role;
+CREATE ROLE IF NOT EXISTS normal_role;
+CREATE ROLE IF NOT EXISTS development_role;
+CREATE ROLE IF NOT EXISTS security_role;
+
+GRANT ROLE network_role TO ROLE sysadmin;
+GRANT ROLE normal_role TO ROLE sysadmin;
+GRANT ROLE development_role TO ROLE sysadmin;
+GRANT ROLE security_role TO ROLE sysadmin;
+
+-- GRANT PRIVILEGES
+
+-- WAREHOUSE USAGE
+GRANT USAGE ON WAREHOUSE compute_wh TO ROLE normal_role;
+GRANT USAGE ON WAREHOUSE compute_wh TO ROLE development_role;
+GRANT USAGE ON WAREHOUSE compute_wh TO ROLE security_role;
+
+-- DATABASE ACCESS
+GRANT USAGE ON DATABASE database_1 TO ROLE normal_role;
+GRANT USAGE ON DATABASE database_1 TO ROLE development_role;
+GRANT USAGE ON DATABASE database_1 TO ROLE security_role;
+
+-- PRD ACCESS
+GRANT USAGE ON SCHEMA database_1.prd TO ROLE normal_role;
+GRANT CREATE TABLE ON SCHEMA database_1.prd TO ROLE normal_role;
+
+GRANT SELECT ON ALL TABLES IN SCHEMA database_1.prd to ROLE normal_role;
+GRANT SELECT ON FUTURE TABLES IN SCHEMA database_1.prd to ROLE normal_role;
+
+GRANT USAGE ON SCHEMA database_1.prd TO ROLE development_role;
+GRANT CREATE TABLE ON SCHEMA database_1.prd TO ROLE development_role;
+GRANT SELECT ON ALL TABLES IN SCHEMA database_1.prd to ROLE development_role;
+GRANT SELECT ON FUTURE TABLES IN SCHEMA database_1.prd to ROLE development_role;
+
+-- DEV ACCESS
+GRANT USAGE ON SCHEMA database_1.dev TO ROLE development_role;
+GRANT CREATE TABLE ON SCHEMA database_1.dev TO ROLE development_role;
+GRANT SELECT ON ALL TABLES IN SCHEMA database_1.dev to ROLE development_role;
+GRANT SELECT ON FUTURE TABLES IN SCHEMA database_1.dev to ROLE development_role;
+
+-- SEC ACCESS
+GRANT USAGE ON SCHEMA database_1.sec TO ROLE security_role;
+GRANT CREATE TABLE ON SCHEMA database_1.sec TO ROLE security_role;
+GRANT ALL ON ALL TABLES IN SCHEMA database_1.sec to ROLE security_role;
+GRANT ALL ON FUTURE TABLES IN SCHEMA database_1.sec to ROLE security_role;
+
+-- CREATE USERS
+
+CREATE USER Network_user 
+    PASSWORD='abc123' 
+    DEFAULT_ROLE = network_role  
+    MUST_CHANGE_PASSWORD = TRUE;
+
+CREATE USER Normal_user  
+    PASSWORD='abc123' 
+    DEFAULT_ROLE = normal_role  
+    MUST_CHANGE_PASSWORD = TRUE;
+
+CREATE USER Normal_user_2  
+    PASSWORD='abc123' 
+    DEFAULT_ROLE = normal_role  
+    DEFAULT_SECONDARY_ROLES = ('ALL')    
+    MUST_CHANGE_PASSWORD = TRUE;
+
+CREATE USER Temp_user  
+    COMMENT = 'expires in 10 days'
+    PASSWORD ='abc123' 
+    DEFAULT_ROLE = normal_role  
+    DAYS_TO_EXPIRY = 10 
+    MUST_CHANGE_PASSWORD = TRUE;
+
+CREATE USER Dev_user   
+    PASSWORD='abc123' 
+    DEFAULT_ROLE = development_role  
+    MUST_CHANGE_PASSWORD = TRUE;
+
+CREATE USER Sec_user   
+    PASSWORD='abc123' 
+    DEFAULT_ROLE = security_role  
+    MINS_TO_BYPASS_MFA = 10
+    MUST_CHANGE_PASSWORD = TRUE;
+
+
+-- GRANT ROLES TO USERS
+
+GRANT ROLE network_role TO USER Network_user;
+GRANT ROLE normal_role TO USER Normal_user;
+GRANT ROLE normal_role TO USER Normal_user_2;
+GRANT ROLE normal_role TO USER Temp_user;
+GRANT ROLE development_role TO USER Dev_user;
+GRANT ROLE security_role TO USER Sec_user;
+
+-- EXERCISE 2
+
+CREATE OR REPLACE RESOURCE MONITOR rm_bi WITH CREDIT_QUOTA=10
+    TRIGGERS ON 75 PERCENT DO NOTIFY
+             ON 100 PERCENT DO SUSPEND_IMMEDIATE;
+
+CREATE OR REPLACE RESOURCE MONITOR rm_dev WITH CREDIT_QUOTA=10
+    TRIGGERS ON 75 PERCENT DO NOTIFY
+             ON 100 PERCENT DO SUSPEND_IMMEDIATE;
+             
+CREATE OR REPLACE WAREHOUSE bi_warehouse
+    WAREHOUSE_SIZE = SMALL
+    MAX_CLUSTER_COUNT = 4
+    MIN_CLUSTER_COUNT = 2
+    SCALING_POLICY = ECONOMY
+    AUTO_SUSPEND = 60
+    INITIALLY_SUSPENDED = TRUE;
+
+CREATE OR REPLACE WAREHOUSE dev_warehouse
+    WAREHOUSE_SIZE = XSMALL
+    AUTO_SUSPEND = 60
+    INITIALLY_SUSPENDED = TRUE;
+
+CREATE OR REPLACE WAREHOUSE ds_warehouse
+    WAREHOUSE_SIZE = MEDIUM
+    WAREHOUSE_TYPE = 'SNOWPARK-OPTIMIZED'
+    INITIALLY_SUSPENDED = TRUE
+    AUTO_SUSPEND = 60;
+
+-- EXERCISE 3
+
+-- CREATE RMs
+
+CREATE OR REPLACE RESOURCE MONITOR rm_all WITH CREDIT_QUOTA=25
+    FREQUENCY = MONTHLY 
+    START_TIMESTAMP = 'IMMEDIATELY'
+    TRIGGERS ON 75 PERCENT DO NOTIFY
+             ON 100 PERCENT DO SUSPEND_IMMEDIATE;
+
+    
+CREATE OR REPLACE RESOURCE MONITOR rm_bi WITH CREDIT_QUOTA=10
+    FREQUENCY = MONTHLY 
+    START_TIMESTAMP = 'IMMEDIATELY'
+    TRIGGERS ON 75 PERCENT DO NOTIFY
+             ON 100 PERCENT DO SUSPEND_IMMEDIATE;
+
+CREATE OR REPLACE RESOURCE MONITOR rm_dev WITH CREDIT_QUOTA=10
+    FREQUENCY = MONTHLY 
+    START_TIMESTAMP = 'IMMEDIATELY'
+    TRIGGERS ON 75 PERCENT DO NOTIFY
+             ON 100 PERCENT DO SUSPEND_IMMEDIATE;
+
+CREATE OR REPLACE RESOURCE MONITOR rm_ds WITH CREDIT_QUOTA=10
+    FREQUENCY = MONTHLY 
+    START_TIMESTAMP = 'IMMEDIATELY'
+    TRIGGERS ON 75 PERCENT DO NOTIFY
+             ON 100 PERCENT DO SUSPEND_IMMEDIATE;
+
+
+-- ATTACH RMs TO ACCOUNT AND WAREHOUSES
+
+ALTER ACCOUNT SET RESOURCE_MONITOR = rm_all;
+
+ALTER WAREHOUSE bi_warehouse SET RESOURCE_MONITOR = rm_bi;
+ALTER WAREHOUSE dev_warehouse SET RESOURCE_MONITOR = rm_dev;
+ALTER WAREHOUSE ds_warehouse SET RESOURCE_MONITOR = rm_ds;
+
+-- EXERCISE 4 CREATE TABLES
+
+-- EXTERNAL STAGE
+CREATE OR REPLACE STAGE s3_stage
+  URL = 's3://frostyfridaychallenges/challenge_3/';
+
+LIST @s3_stage;
+
+CREATE OR REPLACE TABLE s3_table (
+    id INT
+    , first_name TEXT
+    , last_name TEXT
+    , catch_phrase TEXT
+    , timestamp TEXT
+);
+
+COPY INTO s3_table
+  FROM @s3_stage
+  PATTERN='.*week3.*'
+  FILE_FORMAT = (TYPE=CSV SKIP_HEADER = 1)
+  FORCE = TRUE;
+
+SELECT * FROM s3_table;
+
+-- FROM FILE
+CREATE OR REPLACE TABLE local_table (
+    data TEXT
+);
+
+-- PUT file://PATH\*.csv @database_1.public.%local_table;
+
+LIST  @database_1.public.%local_table;
+
+COPY INTO local_table
+  FROM  @database_1.public.%local_table
+  PATTERN='.*.csv.gz'
+  FILE_FORMAT = (TYPE=CSV)
+  FORCE = TRUE;
+
+SELECT * FROM local_table;
+
+-- CREATE TASK
+
+CREATE OR REPLACE TABLE task_table (
+    ts TEXT
+    , msg TEXT
+);
+
+CREATE OR REPLACE TASK task1
+  WAREHOUSE = compute_wh
+  SCHEDULE = '30 MINUTE'
+AS
+  INSERT INTO task_table(ts) VALUES(CURRENT_TIMESTAMP);
+
+CREATE OR REPLACE TASK task2
+  WAREHOUSE = compute_wh
+  AFTER task1
+AS
+  INSERT INTO task_table(msg) VALUES('YEP');
+
+ALTER TASK IF EXISTS task2 RESUME;
+ALTER TASK IF EXISTS task1 RESUME;
+
+SELECT * FROM task_table;
+
+ALTER TASK IF EXISTS task1 SUSPEND;
+ALTER TASK IF EXISTS task2 SUSPEND;
+
+-- COPY A DB
+CREATE DATABASE database_2 CLONE database_1;
+
+
